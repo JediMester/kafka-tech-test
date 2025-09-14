@@ -83,7 +83,7 @@ Connect REST
 
 - Reader Connect: http://localhost:8084
 
-The script create_connectors.sh posts:
+The script `create_connectors.sh` posts:
 
 - filestream-source on writer -> demo-input
 
