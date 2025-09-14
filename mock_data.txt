@@ -1,0 +1,8 @@
+alpha
+bravo
+charlie
+delta
+roses are read
+violets are blue
+there is an unexpected bracket
+on line 32 :D

@@ -1,0 +1,14 @@
+alpha
+bravo
+charlie
+delta
+roses are read
+violets are blue
+there is an unexpected bracket
+on line 32 :D
+proof-1757793842
+proof-1757794740
+proof-1757795480
+proof-1757795543
+proof-1757797009
+proof-1757876542

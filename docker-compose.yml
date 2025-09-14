@@ -1,0 +1,170 @@
+#version: "3.8"
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks: [kafkanet]
+
+  broker-writer:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: broker-writer
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker-writer:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+    networks: [kafkanet]
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  broker-reader:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: broker-reader
+    depends_on: [zookeeper]
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker-reader:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 2
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+    networks: [kafkanet]
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  # Topic-ok létrehozása RF=2-vel
+  kafka-setup:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka-setup
+    #depends_on: [broker-writer, broker-reader]
+    depends_on:
+      broker-writer:
+        condition: service_healthy
+      broker-reader:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/init:ro
+    entrypoint: ["/bin/bash","/init/init-topics.sh"]
+    networks: [kafkanet]
+    restart: "no"
+
+  # Kafka Connect (writer) -> FileStreamSource a writer brokerre csatlakozik
+  connect-writer:
+    image: confluentinc/cp-kafka-connect:7.6.1
+    container_name: connect-writer
+    depends_on: [kafka-setup]
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: broker-writer:9092
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect-writer
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: connect-cluster-writer
+      CONNECT_CONFIG_STORAGE_TOPIC: connect-writer-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: connect-writer-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: connect-writer-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_PLUGIN_PATH: /plugins,/usr/share/java,/usr/share/confluent-hub-components
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./data/mock:/data/mock:ro
+      - ./plugins:/plugins:ro
+    networks: [kafkanet]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+
+  # Kafka Connect (reader) -> FileStreamSink a reader brokerhez csatlakozik
+  connect-reader:
+    image: confluentinc/cp-kafka-connect:7.6.1
+    container_name: connect-reader
+    depends_on: [kafka-setup]
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: broker-reader:9092
+      CONNECT_REST_ADVERTISED_HOST_NAME: connect-reader
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: connect-cluster-reader
+      CONNECT_CONFIG_STORAGE_TOPIC: connect-reader-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: connect-reader-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: connect-reader-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 2
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_PLUGIN_PATH: /plugins,/usr/share/java,/usr/share/confluent-hub-components
+    ports:
+      - "8084:8083"   # hoston 8084-en érhető el a reader Connect REST
+    volumes:
+      - ./data/out:/data/out
+      - ./plugins:/plugins:ro
+    networks: [kafkanet]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+
+  # Egyszerű "topic forwarder": demo-input -> demo-output (reader broker felől)
+  topic-forwarder:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: topic-forwarder
+    depends_on: [kafka-setup]
+    entrypoint: ["/bin/bash","-lc"]
+    command: >
+      '
+      echo "Waiting for broker-reader...";
+      for i in {1..90}; do
+        kafka-broker-api-versions --bootstrap-server broker-reader:9092 >/dev/null 2>&1 && break
+        sleep 2
+      done;
+      echo "Waiting for topic demo-input on reader...";
+      for i in {1..90}; do
+        kafka-topics --bootstrap-server broker-reader:9092 --list | grep -qx demo-input && break
+        sleep 2
+      done;
+      echo "Starting forwarder demo-input -> demo-output";
+      while true; do
+        kafka-console-consumer --bootstrap-server broker-reader:9092 \
+          --topic demo-input --group forwarder --from-beginning --timeout-ms -1 \
+        | kafka-console-producer --bootstrap-server broker-reader:9092 --topic demo-output
+        echo "forwarder pipeline ended, restarting in 2s..." >&2
+        sleep 2
+      done
+      ' 
+    networks: [kafkanet]
+    restart: unless-stopped
+
+networks:
+  kafkanet:
+    driver: bridge
