@@ -31,7 +31,7 @@ This project spins up a **two-broker Kafka cluster** with **Zookeeper**, and two
 - Linux/macOS terminal
 
 ## Quick start
-```bash
+```sh
 # 0) Prepare mounts
 mkdir -p data/mock data/out plugins/connect-file
 cp mock_data.txt data/mock/
@@ -48,7 +48,7 @@ echo "e2e-$(date +%s)" >> data/mock/mock_data.txt
 tail -n 5 data/out/output.txt
 ```
 
-You should see the line appear in data/out/output.txt
+NOTE: You should see the line appear in `data/out/output.txt`
 
 
 ## Replication proof
@@ -90,7 +90,7 @@ The script create_connectors.sh posts:
 - filestream-sink on reader -> demo-output
 
 List available plugins:
-```bash
+```sh
 curl -s http://localhost:8083/connector-plugins | jq '.[].class'
 curl -s http://localhost:8084/connector-plugins | jq '.[].class'
 # expect: org.apache.kafka.connect.file.FileStreamSourceConnector/SinkConnector
@@ -119,7 +119,7 @@ curl -s http://localhost:8084/connector-plugins | jq '.[].class'
 
 - Connect split: each worker uses a single broker endpoint to enforce the “writer only” vs “reader only” requirement.
 
-- Forwarder uses a simple “consumer→producer” pipe to route demo-input → demo-output.
+- Forwarder uses a simple “consumer -> producer” pipe to route demo-input -> demo-output.
 
 - Healthchecks and startup waits reduce race conditions in local Compose environments.
 
@@ -241,6 +241,19 @@ reset-out:
 
 nuke: down
 	@echo "All containers and volumes removed."
+```
+### How to use - a couple of examples:
+```sh
+# creates the necessarey directories - if they don't yet exist - and starts the containers
+make up
+# creates the connectors
+make connectors
+# creates the failover mechanism that demonstrates successful leader switching
+make failover
+# topic listing
+make list
+# describe topics
+make desc
 ```
 
 ## Time spent on the solution
