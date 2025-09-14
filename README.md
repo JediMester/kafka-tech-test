@@ -1,4 +1,4 @@
-# Kafka Tech Test — Two-broker cluster + Kafka Connect (writer/reader roles)
+# Kafka Tech Test —> Two-broker cluster + Kafka Connect (writer/reader roles)
 
 ## Overview
 This project spins up a **two-broker Kafka cluster** with **Zookeeper**, and two **Kafka Connect** workers with separated roles:
